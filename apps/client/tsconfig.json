@@ -9,13 +9,10 @@
     "moduleDetection": "force",
     "isolatedModules": true,
     "verbatimModuleSyntax": true,
-
     "strict": true,
     "noImplicitOverride": true,
-
     "module": "preserve",
     "noEmit": true,
-
     "lib": ["es2022"],
   },
 }

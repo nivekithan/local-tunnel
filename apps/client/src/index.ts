@@ -10,7 +10,7 @@ console.log("[Client] Connecting to tunnel server...");
 const ws = new WebSocket(SERVER_URL);
 
 ws.on("open", () => {
-  console.log("[Client] Connected to tunnel server");
+  console.log("[Client] Connected to tunnel server 2");
 });
 
 ws.on("message", (data: Buffer) => {

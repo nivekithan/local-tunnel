@@ -1,75 +1,84 @@
-import http from "http";
+import * as http from "node:http";
 import { WebSocketServer, WebSocket } from "ws";
 
-const CONTROL_PORT = 9001; // Port for client to connect to
-const PROXY_PORT = 9000; // Port for browser to connect to
+const CONTROL_SERVER_PORT = 9001;
+const PROXY_SERVER_PORT = 9000;
 
-// Store connected clients
-const clients = new Map<string, WebSocket>();
+const SUBDOMAIN = "static";
 
-// Create WebSocket server for control plane (client connections)
 const controlServer = http.createServer();
-const wss = new WebSocketServer({ server: controlServer });
+const websocketServer = new WebSocketServer({ server: controlServer });
 
-wss.on("connection", (ws: WebSocket) => {
-  const clientId = Math.random().toString(36).substring(7);
-  clients.set(clientId, ws);
+const clients = new Map<string, { clientId: string; ws: WebSocket }>();
 
-  console.log(`[Server] Client ${clientId} connected to control plane`);
+websocketServer.on("connection", (ws) => {
+  const clientId = crypto.randomUUID();
 
-  // Send clientId to the client
-  ws.send(JSON.stringify({ type: "registered", clientId }));
+  clients.set(SUBDOMAIN, { clientId, ws });
 
-  ws.on("message", (data: Buffer) => {
-    // Handle responses from client
-    const message = JSON.parse(data.toString());
-
-    if (message.type === "response") {
-      // This is handled by the proxy server below
-      console.log(`[Server] Received response from client ${clientId}`);
-    }
-  });
+  ws.send(
+    JSON.stringify({ type: "registered", clientId, subdomain: SUBDOMAIN }),
+  );
 
   ws.on("close", () => {
-    console.log(`[Server] Client ${clientId} disconnected`);
+    console.log(`Client: ${clientId} closed`);
     clients.delete(clientId);
   });
 
-  ws.on("error", (err: Error) => {
-    console.error(`[Server] WebSocket error for client ${clientId}:`, err);
+  ws.on("error", (err) => {
+    console.error(`Websocket error for client ${clientId}: ${err}`);
+    clients.delete(clientId);
   });
 });
 
-controlServer.listen(CONTROL_PORT, () => {
-  console.log(`[Server] Control plane listening on port ${CONTROL_PORT}`);
+controlServer.listen(CONTROL_SERVER_PORT, () => {
+  console.log(
+    `websocket controll server is listening on: ${CONTROL_SERVER_PORT}`,
+  );
 });
 
-// Create HTTP server for browser requests
-const proxyServer = http.createServer((req, res) => {
-  console.log(`[Server] Browser request: ${req.method} ${req.url}`);
+async function readWholeRequest(req: http.IncomingMessage) {
+  return new Promise<Array<Buffer>>((res, rej) => {
+    const chunks: Array<Buffer> = [];
+    req.on("data", (data: Buffer) => {
+      chunks.push(data);
+    });
 
-  // Get the first available client
-  const clientEntries = Array.from(clients.entries());
-  if (clientEntries.length === 0) {
-    res.writeHead(503, { "Content-Type": "text/plain" });
-    res.end("No clients connected to tunnel");
-    return;
-  }
+    req.on("end", () => {
+      res(chunks);
+    });
 
-  const [clientId, ws] = clientEntries[0];
-  console.log(`[Server] Proxying request to client ${clientId}`);
-
-  // Collect request body
-  const chunks: Buffer[] = [];
-  req.on("data", (chunk) => {
-    chunks.push(chunk);
+    req.on("error", (err) => {
+      rej(err);
+    });
   });
+}
 
-  req.on("end", () => {
-    const body = Buffer.concat(chunks).toString("base64");
-    const requestId = Math.random().toString(36).substring(7);
+async function handleIncomingProxyRequest(
+  req: http.IncomingMessage,
+  res: http.ServerResponse<http.IncomingMessage> & {
+    req: http.IncomingMessage;
+  },
+) {
+  try {
+    console.log(`[browser] request: ${req.method} ${req.url}`);
 
-    // Send request to client via WebSocket
+    const client = clients.get(SUBDOMAIN);
+
+    if (!client) {
+      console.log(
+        `[browser] there no matching client for subdomain: ${SUBDOMAIN}`,
+      );
+      res.writeHead(503, "no client listening");
+      res.end();
+      return;
+    }
+
+    const wholeContent = await readWholeRequest(req);
+
+    const body = Buffer.concat(wholeContent).toString("base64");
+    const requestId = crypto.randomUUID();
+
     const message = {
       type: "request",
       requestId,
@@ -79,7 +88,6 @@ const proxyServer = http.createServer((req, res) => {
       body,
     };
 
-    // Set up one-time listener for response
     const responseHandler = (data: Buffer) => {
       const response = JSON.parse(data.toString());
 
@@ -88,29 +96,29 @@ const proxyServer = http.createServer((req, res) => {
           `[Server] Received response for request ${requestId}: ${response.statusCode}`,
         );
 
-        // Send response back to browser
         res.writeHead(response.statusCode, response.headers);
         res.end(Buffer.from(response.body, "base64"));
 
-        // Remove this listener
-        ws.off("message", responseHandler);
+        client.ws.removeListener("message", responseHandler);
       }
     };
 
-    ws.on("message", responseHandler);
-    ws.send(JSON.stringify(message));
-  });
+    client.ws.on("message", responseHandler);
+    client.ws.send(JSON.stringify(message));
+  } catch (err) {
+    let errMsg = "unknown error";
+    if (err instanceof Error) {
+      errMsg = err.message;
+    }
+
+    console.log(`[browser] error while handling request: ${errMsg}`);
+  }
+}
+
+const proxyServer = http.createServer((req, res) => {
+  return handleIncomingProxyRequest(req, res);
 });
 
-proxyServer.listen(PROXY_PORT, () => {
-  console.log(`[Server] Proxy server listening on port ${PROXY_PORT}`);
-  console.log(`[Server] Open http://localhost:${PROXY_PORT} in your browser`);
-});
-
-// Handle graceful shutdown
-process.on("SIGINT", () => {
-  console.log("\n[Server] Shutting down...");
-  controlServer.close();
-  proxyServer.close();
-  process.exit(0);
+proxyServer.listen(PROXY_SERVER_PORT, () => {
+  console.log(`proxy server listening on port: ${PROXY_SERVER_PORT}`);
 });
