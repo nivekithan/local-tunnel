@@ -8,35 +8,19 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    
     steps:
-      - name: Deploy to Digital Ocean VPS
+      - name: Deploy to VPS
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.DIGITAL_OCEAN_HOST }}
           username: root
           key: ${{ secrets.DIGITAL_OCEAN_PRIVATE_KEY }}
-          port: 22
-          script_stop: true
           script: |
-            # Switch to app user and run deployment commands
             su - app -c 'bash -s' << 'EOF'
-            cd /home/app
-            
-            # Clone repository if it doesn't exist, otherwise update it
-            test -d app && echo "Updating repository..." || echo "Cloning repository..."
-            test -d app && cd app && git fetch origin && git reset --hard origin/main && git clean -fd || (git clone https://github.com/nivekithan/local-tunnel.git app && cd app)
-            
-            # Install dependencies
-            echo "Installing dependencies..."
+            cd /home/app/app 2>/dev/null || git clone https://github.com/nivekithan/local-tunnel.git /home/app/app
+            cd /home/app/app
+            git fetch origin && git reset --hard origin/main
             pnpm install
-            
-            # Manage PM2 process
-            echo "Managing PM2 process..."
-            pm2 describe local-tunnel-server > /dev/null 2>&1 && pm2 restart local-tunnel-server || pm2 start "turbo start --filter=server" --name local-tunnel-server
-            
-            # Save PM2 process list
+            pm2 describe local-tunnel-server >/dev/null 2>&1 && pm2 restart local-tunnel-server || pm2 start "turbo start --filter=server" --name local-tunnel-server
             pm2 save
-            
-            echo "Deployment completed successfully!"
             EOF
