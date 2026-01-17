@@ -17,11 +17,15 @@ function sendMessageFromServer(ws: WebSocket, args: ServerSentMessage) {
 websocketServer.on("connection", (ws, req) => {
   const clientId = crypto.randomUUID();
 
+  console.log({ url: req.url });
+
   if (!req.url) return;
 
   const url = new URL(req.url, "http://localhost");
 
   const domain = url.searchParams.get("subdomain");
+
+  console.log({ domain });
 
   if (!domain) {
     return;
