@@ -1,109 +1,114 @@
-import http2 from 'http2';
 import http from 'http';
+import { WebSocketServer, WebSocket } from 'ws';
 
-// Store active client sessions
-const clients = new Map<string, http2.Http2Session>();
+const CONTROL_PORT = 9001; // Port for client to connect to
+const PROXY_PORT = 9000; // Port for browser to connect to
 
-// Create HTTP/2 server (plaintext, no TLS needed for localhost)
-const server = http2.createServer();
+// Store connected clients
+const clients = new Map<string, WebSocket>();
 
-server.on('session', (session) => {
-  console.log('New client session established');
+// Create WebSocket server for control plane (client connections)
+const controlServer = http.createServer();
+const wss = new WebSocketServer({ server: controlServer });
+
+wss.on('connection', (ws: WebSocket) => {
+  const clientId = Math.random().toString(36).substring(7);
+  clients.set(clientId, ws);
   
-  session.on('error', (err) => {
-    console.error('Session error:', err);
+  console.log(`[Server] Client ${clientId} connected to control plane`);
+  
+  // Send clientId to the client
+  ws.send(JSON.stringify({ type: 'registered', clientId }));
+  
+  ws.on('message', (data: Buffer) => {
+    // Handle responses from client
+    const message = JSON.parse(data.toString());
+    
+    if (message.type === 'response') {
+      // This is handled by the proxy server below
+      console.log(`[Server] Received response from client ${clientId}`);
+    }
+  });
+  
+  ws.on('close', () => {
+    console.log(`[Server] Client ${clientId} disconnected`);
+    clients.delete(clientId);
+  });
+  
+  ws.on('error', (err: Error) => {
+    console.error(`[Server] WebSocket error for client ${clientId}:`, err);
   });
 });
 
-server.on('stream', (stream: http2.ServerHttp2Stream, headers) => {
-  const path = headers[':path'];
-  const method = headers[':method'];
+controlServer.listen(CONTROL_PORT, () => {
+  console.log(`[Server] Control plane listening on port ${CONTROL_PORT}`);
+});
+
+// Create HTTP server for browser requests
+const proxyServer = http.createServer((req, res) => {
+  console.log(`[Server] Browser request: ${req.method} ${req.url}`);
   
-  console.log(`[Server] Received: ${method} ${path}`);
-  
-  // Check if this is a client registration
-  if (path === '/register' && method === 'POST') {
-    // Generate a simple client ID
-    const clientId = `client-${Date.now()}`;
-    
-    // Store the session for this client
-    if (!stream.session) {
-      stream.respond({ ':status': 500 });
-      stream.end('No session available');
-      return;
-    }
-    clients.set(clientId, stream.session);
-    
-    console.log(`[Server] Client registered: ${clientId}`);
-    console.log(`[Server] Total clients: ${clients.size}`);
-    
-    // Send response
-    stream.respond({
-      ':status': 200,
-      'content-type': 'application/json'
-    });
-    
-    stream.end(JSON.stringify({ 
-      clientId,
-      message: 'Registered successfully'
-    }));
-    
-    // Clean up when client disconnects
-    if (stream.session) {
-      stream.session.on('close', () => {
-        clients.delete(clientId);
-        console.log(`[Server] Client disconnected: ${clientId}`);
-        console.log(`[Server] Total clients: ${clients.size}`);
-      });
-    }
-    
+  // Get the first available client
+  const clientEntries = Array.from(clients.entries());
+  if (clientEntries.length === 0) {
+    res.writeHead(503, { 'Content-Type': 'text/plain' });
+    res.end('No clients connected to tunnel');
     return;
   }
   
-  // Handle public HTTP requests (to be proxied to client)
-  // Extract client ID from subdomain or header
-  const clientId = headers['x-client-id'] as string || 'client-default';
-  const clientSession = clients.get(clientId);
+  const [clientId, ws] = clientEntries[0];
+  console.log(`[Server] Proxying request to client ${clientId}`);
   
-  if (!clientSession) {
-    console.log(`[Server] Client not found: ${clientId}`);
-    stream.respond({ ':status': 404 });
-    stream.end('Client not connected');
-    return;
-  }
-  
-  console.log(`[Server] Forwarding request to client: ${clientId}`);
-  
-  // Create a new stream to the client to forward the request
-  const clientStream = (clientSession as http2.ClientHttp2Session).request({
-    ':method': method,
-    ':path': path,
-    ...headers
+  // Collect request body
+  const chunks: Buffer[] = [];
+  req.on('data', (chunk) => {
+    chunks.push(chunk);
   });
   
-  // Forward request body to client
-  stream.pipe(clientStream);
-  
-  // Forward response from client back to original requester
-  clientStream.on('response', (responseHeaders: http2.IncomingHttpHeaders) => {
-    console.log(`[Server] Got response from client, forwarding back`);
-    stream.respond(responseHeaders);
-  });
-  
-  clientStream.pipe(stream);
-  
-  clientStream.on('error', (err: Error) => {
-    console.error('[Server] Client stream error:', err);
-    if (!stream.headersSent) {
-      stream.respond({ ':status': 502 });
-      stream.end('Bad Gateway');
-    }
+  req.on('end', () => {
+    const body = Buffer.concat(chunks).toString('base64');
+    const requestId = Math.random().toString(36).substring(7);
+    
+    // Send request to client via WebSocket
+    const message = {
+      type: 'request',
+      requestId,
+      method: req.method,
+      url: req.url,
+      headers: req.headers,
+      body
+    };
+    
+    // Set up one-time listener for response
+    const responseHandler = (data: Buffer) => {
+      const response = JSON.parse(data.toString());
+      
+      if (response.type === 'response' && response.requestId === requestId) {
+        console.log(`[Server] Received response for request ${requestId}: ${response.statusCode}`);
+        
+        // Send response back to browser
+        res.writeHead(response.statusCode, response.headers);
+        res.end(Buffer.from(response.body, 'base64'));
+        
+        // Remove this listener
+        ws.off('message', responseHandler);
+      }
+    };
+    
+    ws.on('message', responseHandler);
+    ws.send(JSON.stringify(message));
   });
 });
 
-const PORT = 9001;
+proxyServer.listen(PROXY_PORT, () => {
+  console.log(`[Server] Proxy server listening on port ${PROXY_PORT}`);
+  console.log(`[Server] Open http://localhost:${PROXY_PORT} in your browser`);
+});
 
-server.listen(PORT, () => {
-  console.log(`[Server] HTTP/2 tunnel server listening on http://localhost:${PORT}`);
-  console.log(`[Server] Clients can register at: http://localhost:${PORT}/register`);
+// Handle graceful shutdown
+process.on('SIGINT', () => {
+  console.log('\n[Server] Shutting down...');
+  controlServer.close();
+  proxyServer.close();
+  process.exit(0);
 });
