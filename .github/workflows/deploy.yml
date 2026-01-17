@@ -21,7 +21,6 @@ jobs:
           script: |
             # Switch to app user and run deployment commands
             su - app << 'EOF'
-            set -e  # Exit on any error
             set -x  # Print commands as they execute
             
             cd ~
@@ -29,32 +28,32 @@ jobs:
             # Clone or update repository
             if [ ! -d "app" ]; then
               echo "Cloning repository..."
-              git clone https://github.com/nivekithan/local-tunnel.git app
-              cd app
+              git clone https://github.com/nivekithan/local-tunnel.git app || exit 1
+              cd app || exit 1
             else
               echo "Updating repository..."
-              cd app
-              git fetch origin
-              git reset --hard origin/main
-              git clean -fd
+              cd app || exit 1
+              git fetch origin || exit 1
+              git reset --hard origin/main || exit 1
+              git clean -fd || exit 1
             fi
             
             # Install dependencies
             echo "Installing dependencies..."
-            pnpm install
+            pnpm install || exit 1
             
             # Manage PM2 process
             echo "Managing PM2 process..."
             if pm2 describe local-tunnel-server > /dev/null 2>&1; then
               echo "Restarting existing PM2 process..."
-              pm2 restart local-tunnel-server
+              pm2 restart local-tunnel-server || exit 1
             else
               echo "Starting new PM2 process..."
-              pm2 start "turbo start --filter=server" --name local-tunnel-server
+              pm2 start "turbo start --filter=server" --name local-tunnel-server || exit 1
             fi
             
             # Save PM2 process list
-            pm2 save
+            pm2 save || exit 1
             
             echo "Deployment completed successfully!"
             EOF
