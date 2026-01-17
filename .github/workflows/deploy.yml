@@ -20,40 +20,23 @@ jobs:
           script_stop: true
           script: |
             # Switch to app user and run deployment commands
-            su - app << 'EOF'
-            set -x  # Print commands as they execute
+            su - app bash << 'EOF'
+            cd /home/app
             
-            cd ~
-            
-            # Clone or update repository
-            if [ ! -d "app" ]; then
-              echo "Cloning repository..."
-              git clone https://github.com/nivekithan/local-tunnel.git app || exit 1
-              cd app || exit 1
-            else
-              echo "Updating repository..."
-              cd app || exit 1
-              git fetch origin || exit 1
-              git reset --hard origin/main || exit 1
-              git clean -fd || exit 1
-            fi
+            # Clone repository if it doesn't exist, otherwise update it
+            test -d app && echo "Updating repository..." || echo "Cloning repository..."
+            test -d app && cd app && git fetch origin && git reset --hard origin/main && git clean -fd || (git clone https://github.com/nivekithan/local-tunnel.git app && cd app)
             
             # Install dependencies
             echo "Installing dependencies..."
-            pnpm install || exit 1
+            pnpm install
             
             # Manage PM2 process
             echo "Managing PM2 process..."
-            if pm2 describe local-tunnel-server > /dev/null 2>&1; then
-              echo "Restarting existing PM2 process..."
-              pm2 restart local-tunnel-server || exit 1
-            else
-              echo "Starting new PM2 process..."
-              pm2 start "turbo start --filter=server" --name local-tunnel-server || exit 1
-            fi
+            pm2 describe local-tunnel-server > /dev/null 2>&1 && pm2 restart local-tunnel-server || pm2 start "turbo start --filter=server" --name local-tunnel-server
             
             # Save PM2 process list
-            pm2 save || exit 1
+            pm2 save
             
             echo "Deployment completed successfully!"
             EOF
