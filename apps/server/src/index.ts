@@ -19,7 +19,10 @@ websocketServer.on("connection", (ws, req) => {
 
   console.log({ url: req.url });
 
-  if (!req.url) return;
+  if (!req.url) {
+    ws.close();
+    return;
+  }
 
   const url = new URL(req.url, "http://localhost");
 
@@ -28,6 +31,7 @@ websocketServer.on("connection", (ws, req) => {
   console.log({ domain });
 
   if (!domain) {
+    ws.close();
     return;
   }
 
