@@ -16,7 +16,8 @@
     "@types/ws": "^8.18.1"
   },
   "dependencies": {
+    "common": "workspace:*",
     "typescript": "^5.9.3",
-    "common": "workspace:*"
+    "zod": "^4.3.5"
   }
 }

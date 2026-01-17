@@ -1,6 +1,6 @@
 import WebSocket from "ws";
 import http from "http";
-import { parseServerSentMessage, ClientSentMessage } from "common";
+import { parseServerSentMessage, type ClientSentMessage } from "common";
 
 const SERVER_URL = "ws://localhost:9001";
 const LOCAL_PORT = 5173; // Port of your local application to proxy to
@@ -64,10 +64,10 @@ ws.on("message", (data: Buffer) => {
           const response = {
             type: "response",
             requestId,
-            statusCode: localRes.statusCode,
+            statusCode: localRes.statusCode ?? 200,
             headers: localRes.headers,
             body: responseBody,
-          };
+          } as const;
 
           sendMessageFromClient(ws, response);
           console.log(`[Client] Sent response for request ${requestId}`);
@@ -87,7 +87,7 @@ ws.on("message", (data: Buffer) => {
         body: Buffer.from("Could not connect to local server").toString(
           "base64",
         ),
-      };
+      } as const;
 
       sendMessageFromClient(ws, response);
     });

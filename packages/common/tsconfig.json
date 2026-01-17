@@ -15,9 +15,11 @@
 
     /* If transpiling with TypeScript: */
     "module": "NodeNext",
+    "moduleResolution": "NodeNext",
     "outDir": "dist",
     "sourceMap": true,
     "declaration": true,
+    "declarationMap": true,
 
     "lib": ["es2022"],
   },

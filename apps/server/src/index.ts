@@ -1,6 +1,6 @@
 import * as http from "node:http";
 import { WebSocketServer, WebSocket } from "ws";
-import { parseClientSentMessage, ServerSentMessage } from "common";
+import { parseClientSentMessage, type ServerSentMessage } from "common";
 
 const CONTROL_SERVER_PORT = 9001;
 const PROXY_SERVER_PORT = 9000;
@@ -87,10 +87,10 @@ async function handleIncomingProxyRequest(
     const requestId = crypto.randomUUID();
 
     const message = {
-      type: "request",
+      type: "request" as const,
       requestId,
-      method: req.method,
-      url: req.url,
+      method: req.method ?? "GET",
+      url: req.url ?? "/",
       headers: req.headers,
       body,
     };

@@ -1,48 +1,56 @@
 import z from "zod";
 
-// Messages sent from server to client
-export const RegisteredMessage = z.object({
+export const RegisteredMessageSchema = z.object({
   type: z.literal("registered"),
   clientId: z.string(),
   subdomain: z.string(),
 });
 
-export const RequestMessage = z.object({
+export const RequestMessageSchema = z.object({
   type: z.literal("request"),
   requestId: z.string(),
   method: z.string(),
   url: z.string(),
-  headers: z.record(z.string(), z.union([z.string(), z.array(z.string())])),
+  headers: z.record(
+    z.string(),
+    z.union([z.string(), z.array(z.string()), z.undefined()]),
+  ),
   body: z.string(),
 });
 
-export const ServerSentMessage = z.union([RegisteredMessage, RequestMessage]);
+export const ServerSentMessageSchema = z.union([
+  RegisteredMessageSchema,
+  RequestMessageSchema,
+]);
 
-// Messages sent from client to server
-export const ResponseMessage = z.object({
+export const ResponseMessageSchema = z.object({
   type: z.literal("response"),
   requestId: z.string(),
   statusCode: z.number(),
-  headers: z.record(z.string(), z.union([z.string(), z.array(z.string())])),
+  headers: z.record(
+    z.string(),
+    z.union([z.string(), z.array(z.string()), z.undefined()]),
+  ),
   body: z.string(),
 });
 
-export const ClientSentMessage = z.union([ResponseMessage]);
+export const ClientSentMessageSchema = z.discriminatedUnion("type", [
+  ResponseMessageSchema,
+]);
 
-// Type exports
-export type RegisteredMessage = z.infer<typeof RegisteredMessage>;
-export type RequestMessage = z.infer<typeof RequestMessage>;
-export type ServerSentMessage = z.infer<typeof ServerSentMessage>;
-export type ResponseMessage = z.infer<typeof ResponseMessage>;
-export type ClientSentMessage = z.infer<typeof ClientSentMessage>;
+export type RegisteredMessage = z.infer<typeof RegisteredMessageSchema>;
+export type RequestMessage = z.infer<typeof RequestMessageSchema>;
+export type ServerSentMessage = z.infer<typeof ServerSentMessageSchema>;
+export type ResponseMessage = z.infer<typeof ResponseMessageSchema>;
 
-// Parse functions with error handling
+export type ClientSentMessage = z.infer<typeof ClientSentMessageSchema>;
+
 export function parseServerSentMessage(data: string) {
   const parsed = JSON.parse(data.toString());
-  return ServerSentMessage.parse(parsed);
+  return ServerSentMessageSchema.parse(parsed);
 }
 
 export function parseClientSentMessage(data: string) {
   const parsed = JSON.parse(data.toString());
-  return ClientSentMessage.parse(parsed);
+  return ClientSentMessageSchema.parse(parsed);
 }
