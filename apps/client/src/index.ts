@@ -2,8 +2,24 @@ import WebSocket from "ws";
 import http from "http";
 import { parseServerSentMessage, type ClientSentMessage } from "common";
 
-const SERVER_URL = "ws://localhost:9001";
-const LOCAL_PORT = 5173; // Port of your local application to proxy to
+const SERVER_URL = process.env.CONTROL_SERVER_URL;
+const LOCAL_PORT = process.env.PROXY_SERVER_PORT
+  ? parseInt(process.env.PROXY_SERVER_PORT, 10)
+  : undefined;
+
+if (!SERVER_URL) {
+  console.error(
+    "[Client] Error: CONTROL_SERVER_URL environment variable is required",
+  );
+  process.exit(1);
+}
+
+if (!LOCAL_PORT) {
+  console.error(
+    "[Client] Error: PROXY_SERVER_PORT environment variable is required",
+  );
+  process.exit(1);
+}
 
 let clientId: string | null = null;
 
@@ -11,8 +27,11 @@ function sendMessageFromClient(ws: WebSocket, args: ClientSentMessage) {
   ws.send(JSON.stringify(args));
 }
 
+const url = new URL(SERVER_URL);
+
+url.searchParams.set("subdomin", `${LOCAL_PORT}`);
 console.log("[Client] Connecting to tunnel server...");
-const ws = new WebSocket(SERVER_URL);
+const ws = new WebSocket(url);
 
 ws.on("open", () => {
   console.log("[Client] Connected to tunnel server 2");

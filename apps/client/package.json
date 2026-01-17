@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "node --watch ./src/index.ts",
+    "start": "dotenv -e ./.env -- node ./src/index.ts",
     "typecheck": "tsc --noEmit"
   },
   "keywords": [],
@@ -13,7 +14,8 @@
   "packageManager": "pnpm@10.28.0",
   "devDependencies": {
     "@types/node": "^25.0.9",
-    "@types/ws": "^8.18.1"
+    "@types/ws": "^8.18.1",
+    "dotenv-cli": "^11.0.0"
   },
   "dependencies": {
     "common": "workspace:*",

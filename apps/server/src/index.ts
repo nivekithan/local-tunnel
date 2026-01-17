@@ -19,7 +19,7 @@ websocketServer.on("connection", (ws, req) => {
 
   if (!req.url) return;
 
-  const url = new URL(req.url);
+  const url = new URL(req.url, "http://localhost");
 
   const domain = url.searchParams.get("subdomain");
 
