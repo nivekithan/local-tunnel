@@ -4,6 +4,12 @@
     "typecheck": {
       "cache": false,
     },
+    "start": {
+      "dependsOn": ["^build"],
+    },
+    "build": {
+      "dependsOn": ["^build"],
+    },
     // "build": {
     //   "dependsOn": ["^build"],
     //   "outputs": [".next/**", "!.next/cache/**"]
