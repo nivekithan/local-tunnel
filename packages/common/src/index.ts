@@ -37,12 +37,12 @@ export type ResponseMessage = z.infer<typeof ResponseMessage>;
 export type ClientSentMessage = z.infer<typeof ClientSentMessage>;
 
 // Parse functions with error handling
-export function parseServerSentMessage(data: { toString: () => string }): ServerSentMessage {
+export function parseServerSentMessage(data: string) {
   const parsed = JSON.parse(data.toString());
   return ServerSentMessage.parse(parsed);
 }
 
-export function parseClientSentMessage(data: { toString: () => string }): ClientSentMessage {
+export function parseClientSentMessage(data: string) {
   const parsed = JSON.parse(data.toString());
   return ClientSentMessage.parse(parsed);
 }

@@ -1,6 +1,6 @@
 import * as http from "node:http";
 import { WebSocketServer, WebSocket } from "ws";
-import { parseClientSentMessage } from "common";
+import { parseClientSentMessage, ServerSentMessage } from "common";
 
 const CONTROL_SERVER_PORT = 9001;
 const PROXY_SERVER_PORT = 9000;
@@ -12,14 +12,20 @@ const websocketServer = new WebSocketServer({ server: controlServer });
 
 const clients = new Map<string, { clientId: string; ws: WebSocket }>();
 
+function sendMessageFromServer(ws: WebSocket, args: ServerSentMessage) {
+  ws.send(JSON.stringify(args));
+}
+
 websocketServer.on("connection", (ws) => {
   const clientId = crypto.randomUUID();
 
   clients.set(SUBDOMAIN, { clientId, ws });
 
-  ws.send(
-    JSON.stringify({ type: "registered", clientId, subdomain: SUBDOMAIN }),
-  );
+  sendMessageFromServer(ws, {
+    type: "registered",
+    clientId,
+    subdomain: SUBDOMAIN,
+  });
 
   ws.on("close", () => {
     console.log(`Client: ${clientId} closed`);
@@ -90,7 +96,7 @@ async function handleIncomingProxyRequest(
     };
 
     const responseHandler = (data: Buffer) => {
-      const response = parseClientSentMessage(data);
+      const response = parseClientSentMessage(data.toString());
 
       if (response.type === "response" && response.requestId === requestId) {
         console.log(
@@ -105,7 +111,7 @@ async function handleIncomingProxyRequest(
     };
 
     client.ws.on("message", responseHandler);
-    client.ws.send(JSON.stringify(message));
+    sendMessageFromServer(client.ws, message);
   } catch (err) {
     let errMsg = "unknown error";
     if (err instanceof Error) {

@@ -1,11 +1,15 @@
 import WebSocket from "ws";
 import http from "http";
-import { parseServerSentMessage } from "common";
+import { parseServerSentMessage, ClientSentMessage } from "common";
 
 const SERVER_URL = "ws://localhost:9001";
 const LOCAL_PORT = 5173; // Port of your local application to proxy to
 
 let clientId: string | null = null;
+
+function sendMessageFromClient(ws: WebSocket, args: ClientSentMessage) {
+  ws.send(JSON.stringify(args));
+}
 
 console.log("[Client] Connecting to tunnel server...");
 const ws = new WebSocket(SERVER_URL);
@@ -15,7 +19,7 @@ ws.on("open", () => {
 });
 
 ws.on("message", (data: Buffer) => {
-  const message = parseServerSentMessage(data);
+  const message = parseServerSentMessage(data.toString());
 
   if (message.type === "registered") {
     clientId = message.clientId;
@@ -65,7 +69,7 @@ ws.on("message", (data: Buffer) => {
             body: responseBody,
           };
 
-          ws.send(JSON.stringify(response));
+          sendMessageFromClient(ws, response);
           console.log(`[Client] Sent response for request ${requestId}`);
         });
       },
@@ -85,7 +89,7 @@ ws.on("message", (data: Buffer) => {
         ),
       };
 
-      ws.send(JSON.stringify(response));
+      sendMessageFromClient(ws, response);
     });
 
     // Write request body if present
