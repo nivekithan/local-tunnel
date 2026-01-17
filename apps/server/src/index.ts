@@ -45,12 +45,12 @@ websocketServer.on("connection", (ws, req) => {
 
   ws.on("close", () => {
     console.log(`Client: ${clientId} closed`);
-    clients.delete(clientId);
+    clients.delete(domain);
   });
 
   ws.on("error", (err) => {
     console.error(`Websocket error for client ${clientId}: ${err}`);
-    clients.delete(clientId);
+    clients.delete(domain);
   });
 });
 
