@@ -20,7 +20,7 @@ jobs:
           script_stop: true
           script: |
             # Switch to app user and run deployment commands
-            su - app bash << 'EOF'
+            su - app -c 'bash -s' << 'EOF'
             cd /home/app
             
             # Clone repository if it doesn't exist, otherwise update it
