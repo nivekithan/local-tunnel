@@ -21,6 +21,9 @@ jobs:
           script: |
             # Switch to app user and run deployment commands
             su - app << 'EOF'
+            set -e  # Exit on any error
+            set -x  # Print commands as they execute
+            
             cd ~
             
             # Clone or update repository
