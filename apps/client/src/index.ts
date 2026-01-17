@@ -1,5 +1,6 @@
 import WebSocket from "ws";
 import http from "http";
+import { parseServerSentMessage } from "common";
 
 const SERVER_URL = "ws://localhost:9001";
 const LOCAL_PORT = 5173; // Port of your local application to proxy to
@@ -14,7 +15,7 @@ ws.on("open", () => {
 });
 
 ws.on("message", (data: Buffer) => {
-  const message = JSON.parse(data.toString());
+  const message = parseServerSentMessage(data);
 
   if (message.type === "registered") {
     clientId = message.clientId;

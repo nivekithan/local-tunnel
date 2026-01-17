@@ -1,5 +1,6 @@
 import * as http from "node:http";
 import { WebSocketServer, WebSocket } from "ws";
+import { parseClientSentMessage } from "common";
 
 const CONTROL_SERVER_PORT = 9001;
 const PROXY_SERVER_PORT = 9000;
@@ -89,7 +90,7 @@ async function handleIncomingProxyRequest(
     };
 
     const responseHandler = (data: Buffer) => {
-      const response = JSON.parse(data.toString());
+      const response = parseClientSentMessage(data);
 
       if (response.type === "response" && response.requestId === requestId) {
         console.log(
