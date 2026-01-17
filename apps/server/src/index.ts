@@ -5,8 +5,6 @@ import { parseClientSentMessage, type ServerSentMessage } from "common";
 const CONTROL_SERVER_PORT = 9001;
 const PROXY_SERVER_PORT = 9000;
 
-const SUBDOMAIN = "static";
-
 const controlServer = http.createServer();
 const websocketServer = new WebSocketServer({ server: controlServer });
 
@@ -16,15 +14,25 @@ function sendMessageFromServer(ws: WebSocket, args: ServerSentMessage) {
   ws.send(JSON.stringify(args));
 }
 
-websocketServer.on("connection", (ws) => {
+websocketServer.on("connection", (ws, req) => {
   const clientId = crypto.randomUUID();
 
-  clients.set(SUBDOMAIN, { clientId, ws });
+  if (!req.url) return;
+
+  const url = new URL(req.url);
+
+  const domain = url.searchParams.get("subdomain");
+
+  if (!domain) {
+    return;
+  }
+
+  clients.set(domain, { clientId, ws });
 
   sendMessageFromServer(ws, {
     type: "registered",
     clientId,
-    subdomain: SUBDOMAIN,
+    subdomain: domain,
   });
 
   ws.on("close", () => {
@@ -70,11 +78,29 @@ async function handleIncomingProxyRequest(
   try {
     console.log(`[browser] request: ${req.method} ${req.url}`);
 
-    const client = clients.get(SUBDOMAIN);
+    const host = req.headers.host;
+
+    if (!host) {
+      res.writeHead(400, "bad request - missing host header");
+      res.end();
+      return;
+    }
+
+    const hostParts = host.split(".");
+
+    if (hostParts.length !== 3) {
+      res.writeHead(400, "bad request - no subdomin or too many subdomain");
+      res.end();
+      return;
+    }
+
+    const subdomain = hostParts[0];
+
+    const client = clients.get(subdomain);
 
     if (!client) {
       console.log(
-        `[browser] there no matching client for subdomain: ${SUBDOMAIN}`,
+        `[browser] there no matching client for subdomain: ${subdomain}`,
       );
       res.writeHead(503, "no client listening");
       res.end();
