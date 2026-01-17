@@ -14,6 +14,9 @@ importers:
 
   apps/client:
     dependencies:
+      common:
+        specifier: workspace:*
+        version: link:../../packages/common
       typescript:
         specifier: ^5.9.3
         version: 5.9.3
@@ -27,6 +30,9 @@ importers:
 
   apps/server:
     dependencies:
+      common:
+        specifier: workspace:*
+        version: link:../../packages/common
       typescript:
         specifier: ^5.9.3
         version: 5.9.3
@@ -34,6 +40,19 @@ importers:
       '@types/node':
         specifier: ^25.0.9
         version: 25.0.9
+      '@types/ws':
+        specifier: ^8.18.1
+        version: 8.18.1
+
+  packages/common:
+    dependencies:
+      zod:
+        specifier: ^4.3.5
+        version: 4.3.5
+    devDependencies:
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
 
   playgrounds/simple-react-router:
     dependencies:
@@ -1427,6 +1446,9 @@ packages:
   yallist@3.1.1:
     resolution: {integrity: sha512-a4UGQaWPH59mOXUYnAG2ewncQS4i4F43Tv3JoAM+s2VDAmS9NsK8GpDMLrCHPksFT7h3K6TOoUNn2pb7RoXx4g==}
 
+  zod@4.3.5:
+    resolution: {integrity: sha512-k7Nwx6vuWx1IJ9Bjuf4Zt1PEllcwe7cls3VNzm4CQ1/hgtFUK2bRNG3rvnpPUhFjmqJKAKtjV576KnUkHocg/g==}
+
 snapshots:
 
   '@babel/code-frame@7.28.6':
@@ -2674,3 +2696,5 @@ snapshots:
       lightningcss: 1.30.2
 
   yallist@3.1.1: {}
+
+  zod@4.3.5: {}

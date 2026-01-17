@@ -10,12 +10,13 @@
   "keywords": [],
   "author": "",
   "license": "ISC",
-  "packageManager": "pnpm@10.27.0",
+  "packageManager": "pnpm@10.28.0",
   "devDependencies": {
     "@types/node": "^25.0.9",
     "@types/ws": "^8.18.1"
   },
   "dependencies": {
-    "typescript": "^5.9.3"
+    "typescript": "^5.9.3",
+    "common": "workspace:*"
   }
 }
