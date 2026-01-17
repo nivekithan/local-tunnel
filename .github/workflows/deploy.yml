@@ -21,6 +21,6 @@ jobs:
             cd /home/app/app
             git fetch origin && git reset --hard origin/main
             pnpm install
-            pm2 describe local-tunnel-server >/dev/null 2>&1 && pm2 restart local-tunnel-server || pm2 start "turbo start --filter=server" --name local-tunnel-server
+            pm2 describe local-tunnel-server >/dev/null 2>&1 && pm2 restart local-tunnel-server || pm2 start "pnpm turbo start --filter=server" --name local-tunnel-server
             pm2 save
             EOF
