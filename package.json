@@ -4,7 +4,8 @@
   "description": "",
   "keywords": [],
   "scripts": {
-    "dev": "turbo dev --ui tui"
+    "dev": "turbo dev --ui tui",
+    "typecheck": "turbo typecheck"
   },
   "author": "",
   "license": "ISC",

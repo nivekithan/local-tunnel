@@ -2,8 +2,10 @@
   "name": "server",
   "version": "1.0.0",
   "description": "",
+  "type": "module",
   "scripts": {
-    "dev": "node --watch ./src/index.ts"
+    "dev": "node --watch ./src/index.ts",
+    "typecheck": "tsc --noEmit"
   },
   "keywords": [],
   "author": "",
@@ -11,5 +13,8 @@
   "packageManager": "pnpm@10.27.0",
   "devDependencies": {
     "@types/node": "^25.0.9"
+  },
+  "dependencies": {
+    "typescript": "^5.9.3"
   }
 }
