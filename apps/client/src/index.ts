@@ -29,7 +29,7 @@ function sendMessageFromClient(ws: WebSocket, args: ClientSentMessage) {
 
 const url = new URL(SERVER_URL);
 
-url.searchParams.set("subdomin", `${LOCAL_PORT}`);
+url.searchParams.set("subdomain", `${LOCAL_PORT}`);
 console.log("[Client] Connecting to tunnel server...");
 const ws = new WebSocket(url);
 
