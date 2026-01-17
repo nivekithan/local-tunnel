@@ -1,0 +1,15 @@
+{
+  "name": "local-tunnel",
+  "version": "1.0.0",
+  "description": "",
+  "keywords": [],
+  "scripts": {
+    "dev": "turbo dev --ui tui"
+  },
+  "author": "",
+  "license": "ISC",
+  "packageManager": "pnpm@10.27.0",
+  "devDependencies": {
+    "turbo": "^2.7.5"
+  }
+}
