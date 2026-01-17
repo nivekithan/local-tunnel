@@ -16,6 +16,8 @@ jobs:
           host: ${{ secrets.DIGITAL_OCEAN_HOST }}
           username: root
           key: ${{ secrets.DIGITAL_OCEAN_PRIVATE_KEY }}
+          port: 22
+          script_stop: true
           script: |
             # Switch to app user and run deployment commands
             su - app << 'EOF'
