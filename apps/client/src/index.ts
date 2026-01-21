@@ -1,4 +1,4 @@
-import WebSocket from "ws";
+import { WebSocket } from "partysocket";
 import http from "http";
 import { parseServerSentMessage, type ClientSentMessage } from "common";
 
@@ -30,101 +30,110 @@ function sendMessageFromClient(ws: WebSocket, args: ClientSentMessage) {
 const url = new URL(SERVER_URL);
 
 url.searchParams.set("subdomain", `${LOCAL_PORT}`);
-console.log("[Client] Connecting to tunnel server...");
-const ws = new WebSocket(url);
+console.log(`[Client] Connecting to tunnel server... ${url.toString()}`);
 
-ws.on("open", () => {
+const ws = new WebSocket(url.toString());
+
+ws.addEventListener("open", () => {
   console.log("[Client] Connected to tunnel server 2");
 });
 
-ws.on("message", (data: Buffer) => {
-  const message = parseServerSentMessage(data.toString());
+ws.addEventListener("message", ({ data }: { data: Buffer }) => {
+  try {
+    const message = parseServerSentMessage(data.toString());
 
-  if (message.type === "registered") {
-    clientId = message.clientId;
-    console.log(`[Client] Registered with ID: ${clientId}`);
-    console.log(
-      `[Client] Waiting for requests to proxy to localhost:${LOCAL_PORT}...`,
-    );
-    return;
-  }
+    if (message.type === "registered") {
+      clientId = message.clientId;
+      console.log(`[Client] Registered with ID: ${clientId}`);
+      console.log(
+        `[Client] Waiting for requests to proxy to localhost:${LOCAL_PORT}...`,
+      );
+      return;
+    }
 
-  if (message.type === "request") {
-    const { requestId, method, url, headers, body } = message;
-    console.log(`[Client] Received request to proxy: ${method} ${url}`);
+    if (message.type === "request") {
+      const { requestId, method, url, headers, body } = message;
+      console.log(`[Client] Received request to proxy: ${method} ${url}`);
 
-    // Make request to local server
-    const localReq = http.request(
-      {
-        host: "localhost",
-        port: LOCAL_PORT,
-        path: url,
-        method: method,
-        headers: {
-          ...headers,
-          host: `localhost:${LOCAL_PORT}`, // Override host header
+      // Make request to local server
+      const localReq = http.request(
+        {
+          host: "localhost",
+          port: LOCAL_PORT,
+          path: url,
+          method: method,
+          headers: {
+            ...headers,
+            host: `localhost:${LOCAL_PORT}`, // Override host header
+          },
         },
-      },
-      (localRes) => {
-        console.log(
-          `[Client] Got response from localhost:${LOCAL_PORT} - ${localRes.statusCode}`,
+        (localRes) => {
+          console.log(
+            `[Client] Got response from localhost:${LOCAL_PORT} - ${localRes.statusCode}`,
+          );
+
+          // Collect response body
+          const chunks: Buffer[] = [];
+          localRes.on("data", (chunk) => {
+            chunks.push(chunk);
+          });
+
+          localRes.on("end", () => {
+            const responseBody = Buffer.concat(chunks).toString("base64");
+
+            // Send response back to server
+            const response = {
+              type: "response",
+              requestId,
+              statusCode: localRes.statusCode ?? 200,
+              headers: localRes.headers,
+              body: responseBody,
+            } as const;
+
+            sendMessageFromClient(ws, response);
+            console.log(`[Client] Sent response for request ${requestId}`);
+          });
+        },
+      );
+
+      localReq.on("error", (err) => {
+        console.error(
+          "[Client] Error connecting to local server:",
+          err.message,
         );
 
-        // Collect response body
-        const chunks: Buffer[] = [];
-        localRes.on("data", (chunk) => {
-          chunks.push(chunk);
-        });
+        // Send error response
+        const response = {
+          type: "response",
+          requestId,
+          statusCode: 502,
+          headers: { "Content-Type": "text/plain" },
+          body: Buffer.from("Could not connect to local server").toString(
+            "base64",
+          ),
+        } as const;
 
-        localRes.on("end", () => {
-          const responseBody = Buffer.concat(chunks).toString("base64");
+        sendMessageFromClient(ws, response);
+      });
 
-          // Send response back to server
-          const response = {
-            type: "response",
-            requestId,
-            statusCode: localRes.statusCode ?? 200,
-            headers: localRes.headers,
-            body: responseBody,
-          } as const;
-
-          sendMessageFromClient(ws, response);
-          console.log(`[Client] Sent response for request ${requestId}`);
-        });
-      },
-    );
-
-    localReq.on("error", (err) => {
-      console.error("[Client] Error connecting to local server:", err.message);
-
-      // Send error response
-      const response = {
-        type: "response",
-        requestId,
-        statusCode: 502,
-        headers: { "Content-Type": "text/plain" },
-        body: Buffer.from("Could not connect to local server").toString(
-          "base64",
-        ),
-      } as const;
-
-      sendMessageFromClient(ws, response);
-    });
-
-    // Write request body if present
-    if (body) {
-      localReq.write(Buffer.from(body, "base64"));
+      // Write request body if present
+      if (body) {
+        localReq.write(Buffer.from(body, "base64"));
+      }
+      localReq.end();
     }
-    localReq.end();
+  } catch (err) {
+    console.error(err);
+    return;
   }
 });
 
-ws.on("error", (err: Error) => {
+ws.addEventListener("error", (err: Error) => {
   console.error("[Client] WebSocket error:", err);
   process.exit(1);
 });
 
-ws.on("close", () => {
+ws.addEventListener("close", () => {
   console.log("[Client] Connection closed");
   process.exit(0);
 });
