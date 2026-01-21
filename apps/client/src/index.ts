@@ -133,8 +133,8 @@ ws.addEventListener("error", (err: Error) => {
   process.exit(1);
 });
 
-ws.addEventListener("close", () => {
-  console.log("[Client] Connection closed");
+ws.addEventListener("close", (data) => {
+  console.log(`[Client] Connection closed for ${data.reason}`);
   process.exit(0);
 });
 
