@@ -35,6 +35,12 @@ websocketServer.on("connection", (ws, req) => {
     return;
   }
 
+  const existingClient = clients.get(domain);
+
+  if (existingClient) {
+    existingClient.ws.close();
+  }
+
   clients.set(domain, { clientId, ws });
 
   sendMessageFromServer(ws, {
