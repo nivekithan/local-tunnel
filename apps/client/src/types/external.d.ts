@@ -1,4 +1,5 @@
 declare module "sshpk-agent" {
+  import { EventEmitter } from "node:events";
   import type sshpk from "sshpk";
 
   export interface ClientOptions {
@@ -28,7 +29,7 @@ declare module "sshpk-agent" {
 
   export type AgentSignResponse = AgentFailureFrame | AgentSignResponseFrame;
 
-  export class Client {
+  export class Client extends EventEmitter {
     constructor(opts?: ClientOptions);
     listKeys(cb: (err: Error | null, keys: sshpk.Key[]) => void): void;
     listKeys(opts: RequestOptions, cb: (err: Error | null, keys: sshpk.Key[]) => void): void;

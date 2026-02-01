@@ -5,8 +5,9 @@
   "type": "module",
   "scripts": {
     "dev": "node --watch ./src/index.ts",
-    "start": "node ./src/index.ts serve --server ws://localhost:9001 --ssh-auth-sock ~/.1password/agent.sock  3000",
-    "typecheck": "tsc --noEmit"
+    "start": "node ./src/index.ts serve --server ws://localhost:9001 --ssh-auth-sock $HOME/.1password/agent.sock 3000",
+    "typecheck": "tsc --noEmit",
+    "start:prod": "node ./src/index.ts serve 3000"
   },
   "keywords": [],
   "author": "",

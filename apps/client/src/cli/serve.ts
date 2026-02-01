@@ -1,17 +1,19 @@
 import http from "node:http";
+import os from "node:os";
+import path from "node:path";
 import { type ClientSentMessage, parseServerSentMessage } from "common";
 import { WebSocket } from "partysocket";
 import type { CommandModule } from "yargs";
-import { buildAuthResponse } from "../ssh-auth";
+import { buildAuthResponse } from "../ssh-auth.ts";
 
 export const ServeCommand: CommandModule<
   unknown,
   {
     port: number;
     server: string;
-    sshAuthSock?: string;
-    keyFingerprint?: string;
-    keyComment?: string;
+    "ssh-auth-sock": string;
+    "key-fingerprint"?: string;
+    "key-comment"?: string;
   }
 > = {
   command: "serve <port>",
@@ -29,8 +31,10 @@ export const ServeCommand: CommandModule<
         default: "wss://nive.town",
       })
       .option("ssh-auth-sock", {
-        describe: "Path to ssh-agent socket (defaults to SSH_AUTH_SOCK)",
+        describe: "Path to ssh-agent socket",
         type: "string",
+        default: path.join(os.homedir(), ".1password", "agent.sock"),
+        defaultDescription: "$HOME/.1password/agent.sock",
       })
       .option("key-fingerprint", {
         describe: "SSH key fingerprint to use (from ssh-agent)",
@@ -69,9 +73,9 @@ export const ServeCommand: CommandModule<
             console.log("[CLIENT] Got auth challenge from server");
 
             const authResponse = await buildAuthResponse(message.nonce, {
-              keyFingerprint: args.keyFingerprint,
-              keyComment: args.keyComment,
-              sshAuthSock: args.sshAuthSock,
+              keyFingerprint: args["key-fingerprint"],
+              keyComment: args["key-comment"],
+              sshAuthSock: args["ssh-auth-sock"],
             });
 
             console.log("[CLIENT] Sending auth response to server");

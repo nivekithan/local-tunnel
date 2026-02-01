@@ -1,4 +1,7 @@
 import sshpk from "sshpk";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import type {
   AgentSignResponse,
   Client as SshpkAgentClient,
@@ -30,29 +33,66 @@ function keyTypePreference(type: sshpk.AlgorithmType): number {
   }
 }
 
-function createAgentClient(sshAuthSock?: string) {
-  const socketPath = sshAuthSock ?? process.env.SSH_AUTH_SOCK;
-  if (!socketPath || typeof socketPath !== "string") {
+function resolveSshAuthSock(input?: string): string {
+  const raw = (input ?? "").trim();
+  const fallback = path.join(os.homedir(), ".1password", "agent.sock");
+
+  let socketPath = raw || fallback;
+
+  if (!path.isAbsolute(socketPath)) {
+    socketPath = path.resolve(socketPath);
+  }
+
+  if (!fs.existsSync(socketPath)) {
     throw new Error(
-      "No SSH agent detected. Set SSH_AUTH_SOCK (or pass --ssh-auth-sock) so the client can sign the auth challenge.",
+      [
+        `SSH agent socket not found at: ${socketPath}`,
+        raw
+          ? `Provided via --ssh-auth-sock: ${raw}`
+          : `No --ssh-auth-sock provided; tried default: ${fallback}`,
+        "If you're using 1Password, enable the SSH agent and ensure it's running.",
+      ].join("\n"),
     );
   }
 
-  return new sshpkAgent.Client({
-    socketPath,
-    timeout: SSH_AGENT_TIMEOUT_MS,
-  });
+  return socketPath;
 }
 
-function listAgentKeys(agentClient: SshpkAgentClient) {
-  return new Promise<sshpk.Key[]>((resolve, reject) => {
-    agentClient.listKeys({ timeout: SSH_AGENT_TIMEOUT_MS }, (err, keys) => {
+function withAgentErrorHandling<T>(
+  agentClient: SshpkAgentClient,
+  op: (cb: (err: unknown, result?: T) => void) => void,
+): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const onError = (err: unknown) => {
+      cleanup();
+      reject(err);
+    };
+
+    const cleanup = () => {
+      agentClient.off("error", onError);
+    };
+
+    agentClient.once("error", onError);
+
+    op((err, result) => {
+      cleanup();
       if (err) {
         reject(err);
         return;
       }
-      resolve(keys);
+      resolve(result as T);
     });
+  });
+}
+
+function createAgentClient(sshAuthSock?: string) {
+  const socketPath = resolveSshAuthSock(sshAuthSock);
+  return new sshpkAgent.Client({ socketPath, timeout: SSH_AGENT_TIMEOUT_MS });
+}
+
+function listAgentKeys(agentClient: SshpkAgentClient) {
+  return withAgentErrorHandling<sshpk.Key[]>(agentClient, (cb) => {
+    agentClient.listKeys({ timeout: SSH_AGENT_TIMEOUT_MS }, cb);
   });
 }
 
@@ -79,22 +119,16 @@ function signWithAgent(
       "sign-response",
     ];
 
-    agentClient.doRequest(frame, resps, SSH_AGENT_TIMEOUT_MS, (err, resp) => {
-      if (err) {
-        reject(err);
-        return;
-      }
-
-      if (resp.type === "failure") {
-        reject(
-          new Error(
+    withAgentErrorHandling<AgentSignResponse>(agentClient, (cb) => {
+      agentClient.doRequest(frame, resps, SSH_AGENT_TIMEOUT_MS, cb);
+    })
+      .then((resp) => {
+        if (resp.type === "failure") {
+          throw new Error(
             'SSH agent returned "failure" code in response to "sign-request" (key not found, user refused confirmation, or other failure)',
-          ),
-        );
-        return;
-      }
+          );
+        }
 
-      try {
         const sig: sshpk.Signature = sshpk.parseSignature(
           resp.signature,
           key.type,
@@ -128,10 +162,8 @@ function signWithAgent(
         }
 
         resolve(sig);
-      } catch (e) {
-        reject(e);
-      }
-    });
+      })
+      .catch(reject);
   });
 }
 
