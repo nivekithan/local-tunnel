@@ -1,6 +1,6 @@
 import * as http from "node:http";
-import { WebSocketServer, WebSocket } from "ws";
 import { parseClientSentMessage, type ServerSentMessage } from "common";
+import { type WebSocket, WebSocketServer } from "ws";
 
 const CONTROL_SERVER_PORT = 9001;
 const PROXY_SERVER_PORT = 9000;

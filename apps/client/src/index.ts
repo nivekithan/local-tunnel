@@ -1,6 +1,6 @@
+import http from "node:http";
+import { type ClientSentMessage, parseServerSentMessage } from "common";
 import { WebSocket } from "partysocket";
-import http from "http";
-import { parseServerSentMessage, type ClientSentMessage } from "common";
 
 const SERVER_URL = process.env.CONTROL_SERVER_URL;
 const LOCAL_PORT = process.env.PROXY_SERVER_PORT
