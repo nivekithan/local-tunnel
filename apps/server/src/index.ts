@@ -1,94 +1,17 @@
-import { randomBytes, randomUUID } from "node:crypto";
-import * as fs from "node:fs";
+import { randomUUID } from "node:crypto";
 import * as http from "node:http";
-import os from "node:os";
-import path from "node:path";
 import { parseClientSentMessage, type ServerSentMessage } from "common";
-import sshpk from "sshpk";
 import { type WebSocket, WebSocketServer } from "ws";
+import {
+  createAuthorizedKeysSet,
+  generateAuthNonce,
+  verifyAuthResponse,
+} from "./auth.js";
 
 const CONTROL_SERVER_PORT = 9001;
 const PROXY_SERVER_PORT = 9000;
 
-const AUTH_PAYLOAD_PREFIX = "local-tunnel-auth-v1:";
-const AUTHORIZED_KEYS_PATH = new URL("../authorized_keys", import.meta.url);
-const DEFAULT_AUTHORIZED_KEYS_PATH = path.join(
-  os.homedir(),
-  ".ssh",
-  "authorized_keys",
-);
-
-function isSignableKeyType(
-  type: sshpk.AlgorithmTypeWithCurve,
-): type is sshpk.AlgorithmType {
-  return type !== "curve25519";
-}
-
-function authPayload(nonce: string) {
-  return Buffer.from(`${AUTH_PAYLOAD_PREFIX}${nonce}`, "utf8");
-}
-
-function findSshPublicKeyInAuthorizedKeysLine(line: string) {
-  const trimmed = line.trim();
-  if (!trimmed || trimmed.startsWith("#")) return null;
-
-  const parts = trimmed.split(/\s+/);
-  for (let i = 0; i < parts.length - 1; i++) {
-    const type = parts[i];
-    const b64 = parts[i + 1];
-
-    const looksLikeKeyType =
-      type.startsWith("ssh-") ||
-      type.startsWith("ecdsa-") ||
-      type.startsWith("sk-");
-    const looksLikeBase64 = /^[A-Za-z0-9+/=]+$/.test(b64);
-
-    if (!looksLikeKeyType || !looksLikeBase64) continue;
-
-    const comment = parts.slice(i + 2).join(" ");
-    return `${type} ${b64}${comment ? ` ${comment}` : ""}`;
-  }
-
-  return null;
-}
-
-function loadAuthorizedKeyFingerprints(
-  sources: Array<{ label: string; path: string }>,
-) {
-  const allowed = new Set<string>();
-  const loadedFrom: string[] = [];
-
-  for (const source of sources) {
-    if (!fs.existsSync(source.path)) continue;
-    loadedFrom.push(`${source.label}:${source.path}`);
-
-    const contents = fs.readFileSync(source.path, "utf8");
-    for (const line of contents.split("\n")) {
-      const maybeKeyLine = findSshPublicKeyInAuthorizedKeysLine(line);
-      if (!maybeKeyLine) continue;
-
-      const key = sshpk.parseKey(maybeKeyLine, "ssh");
-      allowed.add(key.fingerprint().toString());
-    }
-  }
-
-  if (allowed.size === 0) {
-    throw new Error(
-      `No authorized keys found. Add at least one public key to ${AUTHORIZED_KEYS_PATH.pathname} or ${DEFAULT_AUTHORIZED_KEYS_PATH}`,
-    );
-  }
-
-  console.log(
-    `[Auth] Loaded ${allowed.size} authorized key(s) from ${loadedFrom.join(", ")}`,
-  );
-
-  return allowed;
-}
-
-const allowedKeyFingerprints = loadAuthorizedKeyFingerprints([
-  { label: "repo", path: AUTHORIZED_KEYS_PATH.pathname },
-  { label: "default", path: DEFAULT_AUTHORIZED_KEYS_PATH },
-]);
+const allowedKeyFingerprints = createAuthorizedKeysSet();
 
 const controlServer = http.createServer();
 const websocketServer = new WebSocketServer({ server: controlServer });
@@ -120,7 +43,7 @@ websocketServer.on("connection", (ws, req) => {
     return;
   }
 
-  const nonce = randomBytes(32).toString("base64url");
+  const nonce = generateAuthNonce();
 
   sendMessageFromServer(ws, {
     type: "auth_challenge",
@@ -135,46 +58,33 @@ websocketServer.on("connection", (ws, req) => {
       return;
     }
 
-    try {
-      const key = sshpk.parseKey(message.publicKey, "ssh");
-      const fp = key.fingerprint().toString();
+    const result = verifyAuthResponse(
+      message.publicKey,
+      message.signature,
+      message.hashAlgorithm,
+      nonce,
+      allowedKeyFingerprints,
+    );
 
-      if (!allowedKeyFingerprints.has(fp)) {
-        ws.close(1008, "unauthorized key");
-        return;
-      }
-
-      if (!isSignableKeyType(key.type)) {
-        ws.close(1008, `unsupported key type: ${key.type}`);
-        return;
-      }
-
-      const sig = sshpk.parseSignature(message.signature, key.type, "ssh");
-      const v = key.createVerify(message.hashAlgorithm);
-      v.update(authPayload(nonce));
-
-      if (!v.verify(sig)) {
-        ws.close(1008, "invalid signature");
-        return;
-      }
-
-      ws.removeListener("message", onAuthMessage);
-
-      const existingClient = clients.get(domain);
-      if (existingClient) {
-        existingClient.ws.close();
-      }
-
-      clients.set(domain, { clientId, ws });
-
-      sendMessageFromServer(ws, {
-        type: "registered",
-        clientId,
-        subdomain: domain,
-      });
-    } catch {
-      ws.close(1008, "auth error");
+    if (!result.success) {
+      ws.close(1008, result.error);
+      return;
     }
+
+    ws.removeListener("message", onAuthMessage);
+
+    const existingClient = clients.get(domain);
+    if (existingClient) {
+      existingClient.ws.close();
+    }
+
+    clients.set(domain, { clientId, ws });
+
+    sendMessageFromServer(ws, {
+      type: "registered",
+      clientId,
+      subdomain: domain,
+    });
   };
 
   ws.on("message", onAuthMessage);
@@ -260,7 +170,7 @@ async function handleIncomingProxyRequest(
     const wholeContent = await readWholeRequest(req);
 
     const body = Buffer.concat(wholeContent).toString("base64");
-    const requestId = crypto.randomUUID();
+    const requestId = randomUUID();
 
     const message = {
       type: "request" as const,
