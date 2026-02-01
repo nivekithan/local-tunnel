@@ -1,8 +1,11 @@
 {
-  "name": "client",
+  "name": "ntunnel",
   "version": "1.0.0",
   "description": "",
   "type": "module",
+  "bin": {
+    "ntunnel": "./src/index.ts"
+  },
   "scripts": {
     "dev": "node --watch ./src/index.ts",
     "start": "node ./src/index.ts serve --server ws://localhost:9001 --ssh-auth-sock $HOME/.1password/agent.sock 3000",

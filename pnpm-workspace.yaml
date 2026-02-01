@@ -4,4 +4,5 @@ packages:
   - packages/**
 
 onlyBuiltDependencies:
+  - dtrace-provider
   - esbuild
