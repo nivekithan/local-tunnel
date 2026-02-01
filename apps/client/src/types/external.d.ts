@@ -10,6 +10,24 @@ declare module "sshpk-agent" {
     timeout?: number;
   }
 
+  export interface AgentSignRequestFrame {
+    type: "sign-request";
+    publicKey: Buffer;
+    data: Buffer;
+    flags: string[];
+  }
+
+  export interface AgentFailureFrame {
+    type: "failure";
+  }
+
+  export interface AgentSignResponseFrame {
+    type: "sign-response";
+    signature: Buffer;
+  }
+
+  export type AgentSignResponse = AgentFailureFrame | AgentSignResponseFrame;
+
   export class Client {
     constructor(opts?: ClientOptions);
     listKeys(cb: (err: Error | null, keys: sshpk.Key[]) => void): void;
@@ -24,6 +42,13 @@ declare module "sshpk-agent" {
       data: Buffer | string,
       opts: RequestOptions,
       cb: (err: Error | null, signature: sshpk.Signature) => void,
+    ): void;
+
+    doRequest(
+      frame: AgentSignRequestFrame,
+      resps: Array<AgentSignResponse["type"]>,
+      timeout: number,
+      cb: (err: Error | null, resp: AgentSignResponse) => void,
     ): void;
   }
 

@@ -1,11 +1,18 @@
 import http from "node:http";
 import { type ClientSentMessage, parseServerSentMessage } from "common";
 import { WebSocket } from "partysocket";
-import type { CommandModule } from "yargs";
 import sshpk from "sshpk";
+import type {
+  AgentSignResponse,
+  Client as SshpkAgentClient,
+} from "sshpk-agent";
 import sshpkAgent from "sshpk-agent";
+import type { CommandModule } from "yargs";
 
 const AUTH_PAYLOAD_PREFIX = "local-tunnel-auth-v1:";
+const SSH_AGENT_TIMEOUT_MS = 10 * 60 * 1000;
+
+type SignableKey = sshpk.Key & { type: sshpk.AlgorithmType };
 
 function isSignableKeyType(
   type: sshpk.AlgorithmTypeWithCurve,
@@ -13,11 +20,32 @@ function isSignableKeyType(
   return type !== "curve25519";
 }
 
+function isSignableKey(k: sshpk.Key): k is SignableKey {
+  return isSignableKeyType(k.type);
+}
+
+function keyTypePreference(type: sshpk.AlgorithmType): number {
+  // Prefer modern default SSH keys first.
+  switch (type) {
+    case "ed25519":
+      return 0;
+    case "ecdsa":
+      return 1;
+    case "rsa":
+      return 2;
+    case "dsa":
+      return 3;
+    default:
+      return 99;
+  }
+}
+
 export const ServeCommand: CommandModule<
   unknown,
   {
     port: number;
     server: string;
+    sshAuthSock?: string;
     keyFingerprint?: string;
     keyComment?: string;
   }
@@ -35,6 +63,10 @@ export const ServeCommand: CommandModule<
         describe: "server to connect to",
         type: "string",
         default: "wss://nive.town",
+      })
+      .option("ssh-auth-sock", {
+        describe: "Path to ssh-agent socket (defaults to SSH_AUTH_SOCK)",
+        type: "string",
       })
       .option("key-fingerprint", {
         describe: "SSH key fingerprint to use (from ssh-agent)",
@@ -54,11 +86,23 @@ export const ServeCommand: CommandModule<
       ws.send(JSON.stringify(message));
     }
 
-    const agentClient = new sshpkAgent.Client();
+    function createAgentClient() {
+      const socketPath = args.sshAuthSock ?? process.env.SSH_AUTH_SOCK;
+      if (!socketPath || typeof socketPath !== "string") {
+        throw new Error(
+          "No SSH agent detected. Set SSH_AUTH_SOCK (or pass --ssh-auth-sock) so the client can sign the auth challenge.",
+        );
+      }
 
-    function listAgentKeys() {
+      return new sshpkAgent.Client({
+        socketPath,
+        timeout: SSH_AGENT_TIMEOUT_MS,
+      });
+    }
+
+    function listAgentKeys(agentClient: SshpkAgentClient) {
       return new Promise<sshpk.Key[]>((resolve, reject) => {
-        agentClient.listKeys((err, keys) => {
+        agentClient.listKeys({ timeout: SSH_AGENT_TIMEOUT_MS }, (err, keys) => {
           if (err) {
             reject(err);
             return;
@@ -68,24 +112,98 @@ export const ServeCommand: CommandModule<
       });
     }
 
-    function signWithAgent(key: sshpk.Key, payload: Buffer) {
+    function signWithAgent(
+      agentClient: SshpkAgentClient,
+      key: SignableKey,
+      payload: Buffer,
+    ) {
       return new Promise<sshpk.Signature>((resolve, reject) => {
-        agentClient.sign(key, payload, (err, signature) => {
-          if (err) {
-            reject(err);
-            return;
-          }
-          resolve(signature);
-        });
+        // sshpk-agent hard-codes RSA flags for sign requests, which causes some
+        // agents (notably 1Password) to reject signing with non-RSA keys.
+        // Use the underlying request API so we can set the correct flags.
+        const flags = key.type === "rsa" ? ["rsa-sha2-256"] : [];
+
+        const frame = {
+          type: "sign-request" as const,
+          publicKey: key.toBuffer("rfc4253"),
+          data: payload,
+          flags,
+        };
+
+        const resps: Array<AgentSignResponse["type"]> = [
+          "failure",
+          "sign-response",
+        ];
+
+        agentClient.doRequest(
+          frame,
+          resps,
+          SSH_AGENT_TIMEOUT_MS,
+          (err, resp) => {
+            if (err) {
+              reject(err);
+              return;
+            }
+
+            if (resp.type === "failure") {
+              reject(
+                new Error(
+                  'SSH agent returned "failure" code in response to "sign-request" (key not found, user refused confirmation, or other failure)',
+                ),
+              );
+              return;
+            }
+
+            try {
+              const sig: sshpk.Signature = sshpk.parseSignature(
+                resp.signature,
+                key.type,
+                "ssh",
+              );
+
+              if (!sig.hashAlgorithm) {
+                switch (key.type) {
+                  case "rsa":
+                    sig.hashAlgorithm = "sha256";
+                    break;
+                  case "dsa":
+                    sig.hashAlgorithm = "sha1";
+                    break;
+                  case "ecdsa":
+                    sig.hashAlgorithm =
+                      key.size <= 256
+                        ? "sha256"
+                        : key.size <= 384
+                          ? "sha384"
+                          : "sha512";
+                    break;
+                  case "ed25519":
+                    sig.hashAlgorithm = "sha512";
+                    break;
+                  default:
+                    throw new Error(
+                      `Failed to determine hash algorithm for key type ${key.type}`,
+                    );
+                }
+              }
+
+              resolve(sig);
+            } catch (e) {
+              reject(e);
+            }
+          },
+        );
       });
     }
 
     async function buildAuthResponse(nonce: string) {
       const payload = Buffer.from(`${AUTH_PAYLOAD_PREFIX}${nonce}`, "utf8");
 
-      const keys = (await listAgentKeys()).filter((k) =>
-        isSignableKeyType(k.type),
-      );
+      const agentClient = createAgentClient();
+
+      const allKeys = await listAgentKeys(agentClient);
+      const keys = allKeys.filter(isSignableKey);
+
       if (keys.length === 0) {
         throw new Error(
           "No signable SSH keys available from agent (is 1Password SSH agent enabled?)",
@@ -94,18 +212,25 @@ export const ServeCommand: CommandModule<
 
       const { keyFingerprint, keyComment } = args;
 
-      let key = keys[0];
+      const orderedKeys = [...keys].sort(
+        (a, b) => keyTypePreference(a.type) - keyTypePreference(b.type),
+      );
+
+      let key: SignableKey | null = null;
+      let signature: sshpk.Signature | null = null;
+
       if (keyFingerprint) {
         const fp: sshpk.Fingerprint = sshpk.parseFingerprint(keyFingerprint);
-        const match = keys.find((k) => fp.matches(k));
+        const match = orderedKeys.find((k) => fp.matches(k));
         if (!match) {
           throw new Error(
             `No agent key matches fingerprint: ${keyFingerprint}`,
           );
         }
         key = match;
+        signature = await signWithAgent(agentClient, key, payload);
       } else if (keyComment) {
-        const match = keys.find(
+        const match = orderedKeys.find(
           (k) =>
             typeof k.comment === "string" && k.comment.includes(keyComment),
         );
@@ -113,11 +238,30 @@ export const ServeCommand: CommandModule<
           throw new Error(`No agent key matches comment filter: ${keyComment}`);
         }
         key = match;
+        signature = await signWithAgent(agentClient, key, payload);
+      } else {
+        const errors: string[] = [];
+        for (const candidate of orderedKeys) {
+          try {
+            const sig = await signWithAgent(agentClient, candidate, payload);
+            key = candidate;
+            signature = sig;
+            break;
+          } catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            const fp = candidate.fingerprint("sha256").toString();
+            errors.push(`${candidate.type} ${fp}: ${msg}`);
+          }
+        }
+
+        if (!key || !signature) {
+          throw new Error(
+            `SSH agent could not sign with any key. Errors:\n${errors.join("\n")}`,
+          );
+        }
       }
 
-      const signature = await signWithAgent(key, payload);
-
-      if (!signature.hashAlgorithm) {
+      if (!signature || !signature.hashAlgorithm) {
         throw new Error(
           "SSH agent did not report a hashAlgorithm for signature",
         );
