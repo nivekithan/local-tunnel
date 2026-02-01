@@ -6,7 +6,7 @@ import {
   createAuthorizedKeysSet,
   generateAuthNonce,
   verifyAuthResponse,
-} from "./auth.js";
+} from "./auth.ts";
 
 const CONTROL_SERVER_PORT = 9001;
 const PROXY_SERVER_PORT = 9000;
