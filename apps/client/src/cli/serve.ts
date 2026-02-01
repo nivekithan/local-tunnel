@@ -129,12 +129,10 @@ export const ServeCommand: CommandModule<
 
     ws.addEventListener("error", (err: Error) => {
       console.error("[Client] WebSocket error:", err);
-      process.exit(1);
     });
 
     ws.addEventListener("close", (data) => {
       console.log(`[Client] Connection closed: ${data.reason}`);
-      process.exit(0);
     });
 
     // Handle graceful shutdown
